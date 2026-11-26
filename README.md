@@ -1,40 +1,53 @@
-# Monitor de costos pyme
+# Costo financiero pyme
 
-Comparativo de costos para pymes argentinas: salarios, dólar, inflación y crédito.
+Monitor de liquidez y costo financiero real para pymes argentinas: tasas, inflación, dólar y riesgo país.
 
 ## El problema
 
-El dueño de una pyme argentina toma decisiones todos los días (cuánto aumentar precios, si reponer stock, si pedir un crédito) mirando variables que se mueven solas y que están dispersas en distintas fuentes: el BCRA, el INDEC y los convenios colectivos.
+Una de las decisiones más difíciles para una pyme argentina es cómo financiar su capital de trabajo:
 
-Este proyecto junta esas variables en un solo lugar, con un pipeline que se actualiza todos los días, para responder tres preguntas:
+> **¿Conviene financiar la mercadería con crédito bancario o descuento de cheques, o usar fondos propios dolarizados?**
 
-1. **¿Cuánto le cuesta un empleado a la pyme, en pesos y en dólares?**
-2. **¿Conviene endeudarse?** (tasa de crédito vs. inflación)
-3. **¿Cómo viene el contexto?** (tipo de cambio y actividad económica)
+La respuesta depende de variables que cambian todos los días: la tasa a la que prestan los bancos, la inflación, el tipo de cambio y la volatilidad del país. Están dispersas en distintas fuentes, y la pyme rara vez tiene un analista que las cruce.
+
+## Qué resuelve
+
+Un pipeline diario que:
+
+1. **Calcula la tasa real de financiamiento:** compara el costo del crédito (adelantos en cuenta corriente, descuento de documentos) contra la inflación y la devaluación.
+2. **Cruza esa información con la operación de una pyme** (un dataset simulado de compras y facturación).
+3. **Dispara alertas de "Ventana de Financiamiento":**
+   - 🟢 **Ventana abierta:** la tasa real es negativa; conviene tomar deuda para stockear.
+   - 🔴 **Alerta de margen:** la tasa real es alta y la inflación baja; financiarse caro destruye margen.
+   - 🟡 **Cobertura cambiaria:** la devaluación supera a la tasa en pesos; conviene conservar los dólares y endeudarse en pesos.
+
+## Variables
+
+| Variable | Fuente | Frecuencia | Estado |
+|---|---|---|---|
+| Tipo de cambio oficial y mayorista (Com. A 3500) | API de Estadísticas Cambiarias del BCRA | Diaria | ✅ |
+| Tasas activas (adelantos en cta. cte., documentos) | API de Estadísticas Monetarias del BCRA | Diaria | 🔜 |
+| Inflación (IPC) | ArgentinaDatos | Mensual | 🔜 |
+| Riesgo país | ArgentinaDatos | Diaria | 🔜 |
+| Dólar MEP | ArgentinaDatos | Diaria | 🔜 |
+| Compras y facturación de una pyme | Dataset simulado en PostgreSQL | — | 🔜 |
 
 ## Estado del proyecto
 
 | Etapa | Estado |
 |---|---|
-| Extracción incremental de cotizaciones del dólar (BCRA) | ✅ |
+| Extracción incremental del tipo de cambio (BCRA) | ✅ |
 | Tests unitarios y CI con GitHub Actions | ✅ |
+| Extracción de tasas activas, inflación y riesgo país | 🔜 |
 | Orquestación diaria con Airflow y Docker Compose | 🔜 |
 | Staging en Parquet y carga en Redshift | 🔜 |
-| Salarios (SMVM / convenio de Comercio) con historial de cambios (SCD2) | 🔜 |
-| Inflación y tasas de crédito | 🔜 |
-
-## Fuentes de datos
-
-- **API de Estadísticas Cambiarias del BCRA**: cotizaciones diarias. Es pública y no requiere token. Se consulta una fecha por corrida.
-
-Series que se usan:
-- `USD`: dólar oficial.
-- `REF`: dólar mayorista de referencia (Comunicación A 3500).
+| Dataset simulado de la pyme con historial de cambios (SCD2) | 🔜 |
+| Data mart de tasa real y alertas de "Ventana de Financiamiento" | 🔜 |
 
 ## Estructura del repositorio
 
 ```
-monitor-costos-pyme/
+costo-financiero-pyme/
 ├── .github/workflows/tests.yml   # CI: corre los tests en cada Pull Request
 ├── costos_pyme/
 │   ├── __init__.py
@@ -52,8 +65,8 @@ Requisitos: Python 3.13 y Git.
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/mefaraldo/monitor-costos-pyme.git
-cd monitor-costos-pyme
+git clone https://github.com/mefaraldo/costo-financiero-pyme.git
+cd costo-financiero-pyme
 
 # 2. Crear y activar un entorno virtual
 python -m venv .venv
@@ -79,7 +92,8 @@ python -m pytest -v
 - **Extracción incremental:** cada corrida pide a la API una sola fecha, en lugar de traer toda la historia. Esto prepara el pipeline para que Airflow ejecute un día por corrida.
 - **Extracción separada de la transformación:** `extraer_cotizaciones` solo habla con la API; `transformar_cotizaciones` solo limpia los datos. Así la transformación se puede testear sin depender de internet.
 - **Días sin datos:** los fines de semana y feriados el BCRA no publica cotizaciones. En ese caso la transformación devuelve una tabla vacía con el esquema correcto, en lugar de fallar.
-- **Solo series del dólar:** el foco del proyecto son los costos de una pyme argentina, que se miden contra el dólar oficial y el mayorista.
+- **Solo series del dólar:** el oficial y el mayorista de referencia (Com. A 3500) son los que usa una pyme para valuar importaciones y comparar contra la tasa en pesos.
+- **Inflación observada como primera aproximación:** el MVP compara la tasa contra la última inflación publicada. Usar la inflación esperada (REM del BCRA) queda como mejora futura.
 
 ## Tests y CI
 
